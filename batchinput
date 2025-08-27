@@ -1,0 +1,19 @@
+SAPMF05A	0731	X	                                                                                                                                    	                                                                                                                                    
+                                        	    	 	BDC_CURSOR	RF05A-SEL01(01)
+                                        	    	 	BDC_OKCODE	=SL2
+                                        	    	 	RF05A-SEL01(01)	2008002761
+SAPMF05A	0608	X	                                                                                                                                    	                                                                                                                                    
+                                        	    	 	BDC_CURSOR	RF05A-XPOS1(01)
+                                        	    	 	BDC_OKCODE	=P+
+SAPMF05A	0608	X	                                                                                                                                    	                                                                                                                                    
+                                        	    	 	BDC_CURSOR	RF05A-XPOS1(01)
+                                        	    	 	BDC_OKCODE	=P+
+SAPMF05A	0608	X	                                                                                                                                    	                                                                                                                                    
+                                        	    	 	BDC_CURSOR	RF05A-XPOS1(04)
+                                        	    	 	BDC_OKCODE	=ENTR
+                                        	    	 	RF05A-XPOS1(01)	                                                                                                                                    
+                                        	    	 	RF05A-XPOS1(04)	X
+SAPMF05A	0731	X	                                                                                                                                    	                                                                                                                                    
+                                        	    	 	BDC_CURSOR	RF05A-SEL01(01)
+                                        	    	 	BDC_OKCODE	=PA
+                                        	    	 	RF05A-SEL01(01)	064
