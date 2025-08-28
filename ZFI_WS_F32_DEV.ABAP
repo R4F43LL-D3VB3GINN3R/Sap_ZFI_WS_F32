@@ -14,331 +14,388 @@ FUNCTION zfi_ws_f32 .
 *"      DOC STRUCTURE  ZDOC_FI
 *"----------------------------------------------------------------------
   TABLES: bseg, bkpf.
+*  type-pools: slis.
+  DATA: l_auglv   TYPE t041a-auglv   VALUE 'UMBUCHNG', "Posting with Clearing
+        l_tcode   TYPE sy-tcode      VALUE 'FB05',     "You get an error with any other value
+        l_sgfunct TYPE rfipi-sgfunct VALUE 'C'.        "Post immediately
 
-  DATA: it_document TYPE ztt_documents,
-        ls_document TYPE zst_documents.
 
-  TYPES: BEGIN OF ty_wsdl,
-           bukrs TYPE bkpf-bukrs,
-           monat TYPE bkpf-monat,
-           agkon TYPE agkon,
-           budat TYPE budat,
-           waers TYPE bkpf-waers,
-         END OF ty_wsdl.
-  DATA: ls_wsdl TYPE ty_wsdl.
+  DATA: lt_blntab  TYPE STANDARD TABLE OF blntab,
+        lt_ftclear TYPE STANDARD TABLE OF ftclear,
+        ls_ftclear LIKE LINE OF lt_ftclear,
+        lt_ftpost  TYPE STANDARD TABLE OF ftpost,
+        ls_ftpost  LIKE LINE OF lt_ftpost,
+        lt_fttax   TYPE STANDARD TABLE OF fttax.
 
-  "------------------------------------------------------
-  "             RECEBE OS DADOS DO WSDL
-  "------------------------------------------------------
+  DATA: valor   TYPE bseg-wrbtr,
+        ireturn TYPE bapiret2,
+        itab    TYPE STANDARD TABLE OF bapiret2,
+        iret    LIKE LINE OF itab,
+        ikoart  LIKE bseg-koart,
+        doc_ad  LIKE bkpf-blart,
+        ibldat  LIKE sy-datum, "bkpf-bldat,
+        ibudat  LIKE bkpf-budat,
+        iumskz  LIKE bseg-umskz,
+        i       TYPE i,
+        ai(2)   TYPE c,
+        campo   TYPE string,
+        modo(1) TYPE c.
 
-  "corpo do wsdl
-  ls_wsdl-bukrs = bukrs.
-  ls_wsdl-monat = monat.
-  ls_wsdl-agkon = agkon.
-  ls_wsdl-budat = budat.
-  ls_wsdl-waers = waers.
+  DATA: i_umskz TYPE bseg-umskz.
 
-  "items do documento do wsdl
-  LOOP AT doc.
-    ls_document-belnr = doc-belnr.
-    ls_document-buzei = doc-buzei.
-    ls_document-gjahr = doc-gjahr.
-    APPEND ls_document TO it_document.
-  ENDLOOP.
-
-  "------------------------------------------------------
-  "        CONVERSÃO PARA DADOS DE ENTRADA
-  "------------------------------------------------------
+*  BAPIRETURN TYPE  BAPIRET2
 
   CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
     EXPORTING
       input  = monat
     IMPORTING
       output = monat.
+
   CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
     EXPORTING
       input  = agkon
     IMPORTING
       output = agkon.
+
+
   CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
     EXPORTING
       input  = bukrs
     IMPORTING
       output = bukrs.
 
-  LOOP AT it_document INTO ls_document.
+
+  LOOP AT doc." into wa_doc.
     CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
       EXPORTING
-        input  = ls_document-belnr
+        input  = doc-belnr
       IMPORTING
-        output = ls_document-belnr.
+        output = doc-belnr.
+
     CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
       EXPORTING
-        input  = ls_document-buzei
+        input  = doc-buzei
       IMPORTING
-        output = ls_document-buzei.
-    MODIFY it_document FROM ls_document.
+        output = doc-buzei.
+
+    MODIFY doc.
   ENDLOOP.
 
-  "--------------------------------------------------------
-  "  001 - VALIDAÇÃO PARA PROIBIÇÃO DE VALORES A COMPENSAR
-  "  002 - RECEBIMENTO DE VALORES A SEREM COMPENSADOS E CHAVE DE LANÇAMENTO
-  "--------------------------------------------------------
-  LOOP AT it_document INTO ls_document.
+*1ª saber se há valores q ficam por compensar
+*H  Crédito
+*S  Débito
 
-    SELECT SINGLE *
-    FROM bseg INTO @DATA(ls_temp_bseg)
-    WHERE belnr EQ @ls_document-belnr
-    AND   buzei EQ @ls_document-buzei
-    AND   gjahr EQ @ls_document-gjahr
-    AND   bukrs EQ @ls_wsdl-bukrs
-    AND ( koart EQ 'D' OR koart = 'K' ).
+  LOOP AT doc.
+    SELECT * FROM bseg INTO bseg
+     WHERE belnr EQ doc-belnr AND buzei EQ doc-buzei AND bukrs EQ bukrs
+      AND gjahr EQ doc-gjahr AND ( koart EQ 'D' OR koart = 'K' ).
+      IF bseg-shkzg EQ 'S'.
 
-    "002
-    IF sy-subrc EQ 0.
-      CASE ls_temp_bseg-shkzg.
-        WHEN 'S'.
-          ls_document-dmbtr = ls_temp_bseg-wrbtr * 1.
-        WHEN 'H'.
-          ls_document-dmbtr = ls_temp_bseg-wrbtr.
-      ENDCASE.
-
-      ls_document-shkzg = ls_temp_bseg-shkzg.
-      ls_document-koart = ls_temp_bseg-koart.
-      ls_document-hkont = ls_temp_bseg-hkont.
-      ls_document-bschl = ls_temp_bseg-bschl.
-      MODIFY it_document FROM ls_document.
-    ENDIF.
-
-    "001
-    IF ls_temp_bseg-augbl IS NOT INITIAL.
-      message = |Documento { ls_document-belnr } { ls_document-gjahr } { ls_wsdl-bukrs } já se encontra compensado|.
-      RETURN.
-    ENDIF.
-
-  ENDLOOP.
-
-  "------------------------------------------------------------
-  "  003 - VALIDAÇÃO PARA EXISTÊNCIA DE DOCUMENTOS DO TIPO AD
-  "------------------------------------------------------------
-  LOOP AT it_document INTO ls_document.
-
-    SELECT SINGLE *
-    FROM bkpf
-    INTO @DATA(ls_temp_bkpf)
-    WHERE belnr EQ @ls_document-belnr
-    AND   bukrs EQ @ls_wsdl-bukrs
-    AND   gjahr EQ @ls_document-gjahr.
-
-    IF sy-subrc EQ 0.
-
-      ls_document-xblnr = ls_temp_bkpf-xblnr.
-      ls_document-bldat = ls_temp_bkpf-bldat.
-      ls_document-budat = ls_temp_bkpf-budat.
-      ls_document-waers = ls_temp_bkpf-waers.
-      ls_document-blart = ls_temp_bkpf-blart.
-
-      IF ls_document-waers NE ls_wsdl-waers.
-        message = |Documento { ls_document-belnr } { ls_document-gjahr } { ls_wsdl-bukrs } moeda inválida |.
+        valor = valor - bseg-wrbtr.
+      ELSEIF bseg-shkzg EQ 'H'.
+        valor = valor + bseg-wrbtr.
+      ENDIF.
+      IF bseg-augbl IS NOT INITIAL.
+*       bapireturn-type = 'E'.
+        CONCATENATE 'Documento' bseg-belnr bseg-gjahr bukrs 'já se encontra compensado'
+                INTO message SEPARATED BY space.
         RETURN.
       ENDIF.
+    ENDSELECT.
+  ENDLOOP.
 
-      IF ls_temp_bkpf-blart EQ 'AD'.
 
-        SELECT SINGLE umskz
-        FROM bseg
-        INTO @DATA(lv_temp_umskz)
-        WHERE belnr EQ @ls_document-belnr
-        AND buzei   EQ @ls_document-buzei
-        AND bukrs   EQ @ls_wsdl-bukrs
-        AND gjahr   EQ @ls_document-gjahr
-        AND ( koart EQ 'D' OR koart = 'K' ).
-
-        IF sy-subrc EQ 0.
-          ls_document-umskz = lv_temp_umskz.
-        ENDIF.
-      ENDIF.
-
-      MODIFY it_document FROM ls_document.
+  "validar se há doc tipo AD
+  LOOP AT doc.
+    SELECT SINGLE blart FROM bkpf INTO doc_ad
+        WHERE belnr EQ doc-belnr AND bukrs EQ bukrs
+    AND gjahr EQ doc-gjahr AND blart = 'AD'.
+    IF sy-subrc EQ '0'.
+      SELECT SINGLE umskz INTO iumskz FROM bseg
+        WHERE belnr EQ doc-belnr AND buzei EQ doc-buzei AND bukrs EQ bukrs
+  AND gjahr EQ doc-gjahr AND ( koart EQ 'D' OR koart = 'K' ).
     ENDIF.
   ENDLOOP.
+  CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum+2(2) INTO ibldat SEPARATED BY '.'.
+  CONCATENATE budat+6(2) budat+4(2) budat+2(2) INTO ibudat SEPARATED BY '.'.
 
-  "------------------------------------------------------------
-  "         004 - COMPENSAÇÃO DE FORNECEDORES
-  "------------------------------------------------------------
+  IF valor > 0 AND doc_ad IS NOT INITIAL.
+*    IF doc_ad IS NOT INITIAL.  "fazer compensação por bi
 
-  "tabelas internas para bapi
-  DATA: t_blntab  TYPE STANDARD TABLE OF blntab,
-        t_ftclear TYPE STANDARD TABLE OF ftclear,
-        t_ftpost  TYPE STANDARD TABLE OF ftpost,
-        t_fttax   TYPE STANDARD TABLE OF fttax.
+    CLEAR dynprotab. REFRESH dynprotab.
+    PERFORM carrega_dynprotab USING: 'SAPMF05A'   '0122'  'X',
 
-  DATA: ls_blntab  TYPE blntab,
-        ls_ftclear TYPE ftclear,
-        ls_ftpost  TYPE ftpost,
-        ls_fttax   TYPE fttax.
+                                     'BDC_OKCODE' 'SL'   ' ',
+                                     'BKPF-BLDAT'  ibldat ' ',
+                                     'BKPF-BLART'  'AB'   ' ',
+                                     'BKPF-BUKRS'  bukrs  ' ',
+                                     'BKPF-BUDAT'  ibudat ' ',
+                                     'BKPF-MONAT'  monat  ' ',
+                                     'BKPF-WAERS'  waers  ' ',
 
-  " definir variáveis para mensagens
-  DATA: e_msgid TYPE sy-msgid,
-        e_msgno TYPE sy-msgno,
-        e_msgty TYPE sy-msgty,
-        e_msgv1 TYPE sy-msgv1,
-        e_msgv2 TYPE sy-msgv2,
-        e_msgv3 TYPE sy-msgv3,
-        e_msgv4 TYPE sy-msgv4,
-        e_subrc TYPE sy-subrc.
 
-  "--------------------------------------------------
-  " COMPENSAÇÃO DE DOCUMENTOS PARA FORNECEDORES
-  "--------------------------------------------------
-  CALL FUNCTION 'POSTING_INTERFACE_START'
-    EXPORTING
-      i_client           = sy-mandt
-      i_function         = 'C'
-      i_mode             = 'A'
-      i_user             = sy-uname
-    EXCEPTIONS
-      client_incorrect   = 1
-      function_invalid   = 2
-      group_name_missing = 3
-      mode_invalid       = 4
-      update_invalid     = 5
-      OTHERS             = 6.
+                                    'SAPMF05A' '0710'  'X',
+                                    'BDC_OKCODE'  '=PA' ' ',
+                                    'RF05A-AGBUK' bukrs ' ',
+                                    'RF05A-AGKON' agkon ' ',
+                                    'RF05A-AGUMS' iumskz ' ',
+                                    'RF05A-XPOS1(07)' 'X' ' '.
 
-  IF sy-subrc <> 0.
-    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
-            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
-  ENDIF.
 
-  DATA: it_doc_vendors TYPE ztt_documents,
-        ls_doc_vendors TYPE zst_documents.
 
-  LOOP AT it_document INTO ls_document WHERE koart EQ 'K'.
-    APPEND ls_document TO it_doc_vendors.
-  ENDLOOP.
+    PERFORM carrega_dynprotab USING:  'SAPMF05A' '0731'  'X',
+                                      'BDC_OKCODE'  '=PA' ' '.
+    LOOP AT doc.
+      i = i + 1.
+      ai = i.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING
+          input  = ai
+        IMPORTING
+          output = ai.
 
-  SORT it_doc_vendors BY belnr buzei ASCENDING.
-  DATA: lv_last_belnr TYPE belnr_d.
-  DATA: doc_itemcount TYPE i VALUE 1.
-
-  IF it_doc_vendors IS NOT INITIAL.
-
-    LOOP AT it_doc_vendors INTO ls_doc_vendors WHERE koart EQ 'K'.
-
-      CLEAR ls_ftpost.
-      ls_ftclear-agkoa  = 'K'.
-      ls_ftclear-xnops  = 'X'.
-      ls_ftclear-agkon  = ls_wsdl-agkon.
-      ls_ftclear-agbuk  = ls_wsdl-bukrs.
-      ls_ftclear-selfd  = 'BELNR'.
-      ls_ftclear-selvon = ls_doc_vendors-belnr.
-      ls_ftclear-selbis = ls_doc_vendors-belnr.
-      APPEND ls_ftclear TO t_ftclear.
-
-      "--------------------------------------------------
-      " documento (compensação)
-
-      CLEAR: ls_ftpost.
-      ls_ftpost-stype = 'K'."Header
-      ls_ftpost-count = doc_itemcount.  "number of Dynpro
-      ADD 1 TO doc_itemcount.
-
-      IF doc_itemcount LT lines( it_doc_vendors ) - 1 OR lines( it_doc_vendors ) EQ 1.
-
-        ls_ftpost-fnam = 'BKPF-BUDAT'.
-        CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
-        APPEND ls_ftpost TO t_ftpost.
-
-        ls_ftpost-fnam = 'BKPF-BLDAT'.
-        CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
-        APPEND ls_ftpost TO t_ftpost.
-
-        ls_ftpost-fnam = 'BKPF-BLART'.
-        ls_ftpost-fval = 'AB'.
-        APPEND ls_ftpost TO t_ftpost.
-
-        ls_ftpost-fnam = 'BKPF-MONAT'.
-        ls_ftpost-fval = ls_wsdl-monat.
-        APPEND ls_ftpost TO t_ftpost.
-
-        ls_ftpost-fnam = 'BKPF-BUKRS'.
-        ls_ftpost-fval = ls_wsdl-bukrs.
-        APPEND ls_ftpost TO t_ftpost.
-
-        ls_ftpost-fnam = 'BKPF-WAERS'.
-        ls_ftpost-fval = ls_doc_vendors-waers.
-        APPEND ls_ftpost TO t_ftpost.
-
-        ls_ftpost-fnam  = 'BDC_OKCODE'.
-        ls_ftpost-fval  = '/00'.
-        APPEND ls_ftpost TO t_ftpost.
-
-      ENDIF.
-
-      DATA: lv_key TYPE bschl.
-      IF ls_document-shkzg EQ 'S'.
-        lv_key = '40'.
-      ELSE.
-        lv_key = '50'.
-      ENDIF.
-
-      CLEAR ls_ftpost.
-      ls_ftpost-stype = 'P'.
-      ls_ftpost-count = doc_itemcount.
-      ls_ftpost-fnam  = 'RF05A-NEWBS'.
-      ls_ftpost-fval  = lv_key.
-      APPEND ls_ftpost TO t_ftpost.
-
-      ls_ftpost-count = doc_itemcount.
-      ls_ftpost-fnam  = 'RF05A-NEWKO'.   " Vendor code
-      ls_ftpost-fval  = '2782000005'.
-      APPEND ls_ftpost TO t_ftpost.
-
-      DATA lv_wrbtr_char TYPE string.
-      lv_wrbtr_char = ls_doc_vendors-dmbtr.
-      TRANSLATE lv_wrbtr_char USING '.,'.
-      CONDENSE lv_wrbtr_char NO-GAPS.
-
-      ls_ftpost-count = doc_itemcount.
-      ls_ftpost-fnam  = 'BSEG-WRBTR'.
-      ls_ftpost-fval  = lv_wrbtr_char.
-      APPEND ls_ftpost TO t_ftpost.
-
-      ls_ftpost-count = doc_itemcount.
-      ls_ftpost-fnam  = 'BSEG-VALUT'.    " Amount
-      CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
-      APPEND ls_ftpost TO t_ftpost.
-
-      ls_ftpost-fnam  = 'BDC_OKCODE'.
-      ls_ftpost-fval  = '/00'.
-      APPEND ls_ftpost TO t_ftpost.
-
-      ADD 1 TO doc_itemcount.
-      lv_last_belnr = ls_document-belnr.
-
+      CONCATENATE 'RF05A-SEL01(' ai ')'  INTO campo.
+      PERFORM carrega_dynprotab USING: campo doc-belnr ' '.
     ENDLOOP.
 
-    "--------------------------------------------------
-    " chamar interface de clearing
+    campo = valor.
+    TRANSLATE campo USING '.,'.
+    PERFORM carrega_dynprotab USING:  'SAPDF05X' '3100'  'X',
+                                      'BDC_OKCODE'  '=PI' ' ',
+                                      'BDC_CURSOR' 'RF05A-AKOBT' ' ',
+                                      'RF05A-ABPOS' '1' ' ',
+
+                                      'SAPDF05X' '3100'  'X',
+                                      'RF05A-ABPOS' '1' ' ',
+                                      'RF05A-AKOBT' campo ' ',
+                                      'BDC_OKCODE'  '=BU' ' ',
+
+                                      'SAPMF05A' '0700'  'X',
+                                      'BDC_CURSOR' 'RF05A-AZEI1(01)' ' ',
+                                      'BDC_OKCODE'  '=PI' ' ',
+
+                                      'SAPMF05A' '0301'  'X',
+                                      'BSEG-ZUONR' '.' ' ',
+                                      'BDC_OKCODE'  '=BU' ' '.
+
+    IF modo IS INITIAL. modo = 'N'. ENDIF.
+    CALL TRANSACTION 'FB05' USING dynprotab MODE modo
+
+   MESSAGES INTO msg .
+    CLEAR dynprotab. REFRESH dynprotab.
+    LOOP AT msg WHERE msgtyp EQ 'S' OR msgtyp EQ 'E'.
+      MOVE msg-msgv1 TO message.
+      IF msg-msgnr EQ '312' AND msg-msgtyp EQ 'S'.
+        MOVE msg-msgv1 TO belnr.
+        CONCATENATE 'O documento' belnr 'foi registado na empresa' bukrs INTO message SEPARATED BY space.
+      ELSE.
+        CONCATENATE msg-dyname
+                    msg-dynumb
+                    msg-env
+                    msg-fldname
+                    msg-msgid
+                    msg-msgnr
+                    msg-msgspra
+                    msg-msgtyp
+                    msg-msgv1
+                    msg-msgv2
+                    msg-msgv3
+                    msg-msgv4
+                    msg-tcode INTO message SEPARATED BY space.
+      ENDIF.
+    ENDLOOP.
+*  ENDIF.
+
+  ELSEIF  valor >= '-0.99' AND valor <= '0.99'.
+
+    CONCATENATE budat+6(2) budat+4(2) budat+2(2) INTO ibudat SEPARATED BY '.'.
+
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+      EXPORTING
+        input  = agkon
+      IMPORTING
+        output = agkon.
+    CLEAR dynprotab. REFRESH dynprotab.
+    PERFORM carrega_dynprotab USING: 'SAPMF05A'   '0131'  'X',
+
+                                     'BDC_OKCODE' '=PA'   ' ',
+                                     'RF05A-AGKON' agkon ' ',
+*                                       'BKPF-BLART'  'AB'   ' ',
+                                     'BKPF-BUKRS'  bukrs  ' ',
+                                     'BKPF-BUDAT'  ibudat ' ',
+                                     'BKPF-MONAT'  monat  ' ',
+                                     'BKPF-WAERS'  waers  ' ',
+                                     'RF05A-XNOPS' 'X' ' ',
+                                     'RF05A-XPOS1(07)' 'X' ' '.
+
+
+
+    PERFORM carrega_dynprotab USING:  'SAPMF05A' '0731'  'X',
+                                      'BDC_OKCODE'  '=PA' ' '.
+    LOOP AT doc.
+      i = i + 1.
+      ai = i.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+        EXPORTING
+          input  = ai
+        IMPORTING
+          output = ai.
+
+      CONCATENATE 'RF05A-SEL01(' ai ')'  INTO campo.
+      PERFORM carrega_dynprotab USING: campo doc-belnr ' '.
+    ENDLOOP.
+    valor = valor * -1.
+    campo = valor.
+    TRANSLATE campo USING '.,'.
+
+    PERFORM carrega_dynprotab USING:   'SAPDF05X'  '3100'  'X',
+
+                                       'BDC_OKCODE'  '=KMD' ' ',
+                                       'RF05A-ABPOS'  '1' ' ',
+
+                                       'SAPMF05A'  '0700'  'X',
+                                       'BDC_OKCODE'  '/00' ' ',
+                                       'RF05A-NEWBS'  '40' ' ',
+                                       'RF05A-NEWKO'  '2782000005' ' ',
+
+                                       'SAPMF05A'  '0300'  'X',
+                                       'BDC_OKCODE'  '=BS' ' ',
+                                       'BSEG-WRBTR'  campo ' ',
+
+                                      'SAPLKACB'  '0002' 'X',
+                                       'BDC_OKCODE' '=ENTE' ' ',
+                                      'SAPMF05A' '0700'  'X' ,
+                                      'BDC_OKCODE'  '=BU' ' '.
+
+    IF modo IS INITIAL. modo = 'N'. ENDIF.
+    CALL TRANSACTION 'F-32' USING dynprotab MODE modo
+   MESSAGES INTO msg .
+    CLEAR dynprotab. REFRESH dynprotab.
+    LOOP AT msg WHERE msgtyp EQ 'S' OR msgtyp EQ 'E'.
+      MOVE msg-msgv1 TO message.
+      IF msg-msgnr EQ '312' AND msg-msgtyp EQ 'S'.
+        MOVE msg-msgv1 TO belnr.
+        CONCATENATE 'O documento' belnr 'foi registado na empresa' bukrs INTO message SEPARATED BY space.
+      ELSE.
+        CONCATENATE msg-dyname
+                    msg-dynumb
+                    msg-env
+                    msg-fldname
+                    msg-msgid
+                    msg-msgnr
+                    msg-msgspra
+                    msg-msgtyp
+                    msg-msgv1
+                    msg-msgv2
+                    msg-msgv3
+                    msg-msgv4
+                    msg-tcode INTO message SEPARATED BY space.
+      ENDIF.
+    ENDLOOP.
+
+  ELSE.
+
+    IF modo IS INITIAL. modo = 'N'. ENDIF.
+    CALL FUNCTION 'POSTING_INTERFACE_START'
+      EXPORTING
+        i_client           = sy-mandt
+        i_function         = 'C'
+*       i_group            = ' '
+*       i_holddate         = ' '
+*       i_keep             = ' '
+        i_mode             = modo "'N'
+        i_update           = 'S'
+        i_user             = sy-uname
+*       i_xbdcc            = ' '
+      EXCEPTIONS
+        client_incorrect   = 1
+        function_invalid   = 2
+        group_name_missing = 3
+        mode_invalid       = 4
+        update_invalid     = 5
+        OTHERS             = 6.
+
+
+    IF sy-subrc <> 0.
+      EXIT.
+    ENDIF.
+
+
+*  batch input values
+    CLEAR: lt_ftpost.
+    REFRESH: lt_ftpost.
+
+    CLEAR: ls_ftpost.
+    ls_ftpost-stype = 'K'."Header
+    ls_ftpost-count = 1.  "number of Dynpro
+
+    ls_ftpost-fnam = 'BKPF-BLDAT'.
+    CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
+    APPEND ls_ftpost TO lt_ftpost.
+
+    ls_ftpost-fnam = 'BKPF-BUDAT'.
+    CONCATENATE budat+6(2) budat+4(2) budat(4) INTO ls_ftpost-fval SEPARATED BY '.'.
+    APPEND ls_ftpost TO lt_ftpost.
+
+    ls_ftpost-fnam = 'BKPF-BLART'.
+    ls_ftpost-fval = 'AB'.         "Same type as documents cleared via F-32
+    APPEND ls_ftpost TO lt_ftpost.
+
+    ls_ftpost-fnam = 'BKPF-MONAT'.
+    ls_ftpost-fval = monat.
+    APPEND ls_ftpost TO lt_ftpost.
+
+    ls_ftpost-fnam = 'BKPF-BUKRS'.
+    ls_ftpost-fval = bukrs.
+    APPEND ls_ftpost TO lt_ftpost.
+
+    ls_ftpost-fnam = 'BKPF-WAERS'.
+    ls_ftpost-fval = waers.
+    APPEND ls_ftpost TO lt_ftpost.
+
+
+*  documents to be cleared
+    CLEAR: lt_ftclear, ls_ftclear.
+    REFRESH:lt_ftclear.
+
+*  CLEAR: ls_ftclear.
+
+    LOOP AT doc.
+      CLEAR i_umskz.
+      SELECT SINGLE umskz INTO i_umskz FROM bseg
+        WHERE bukrs EQ bukrs AND belnr EQ doc-belnr AND buzei EQ doc-buzei  AND gjahr EQ doc-gjahr
+        AND umskz <> ''.
+      IF sy-subrc EQ '0'. "razao especial
+        ls_ftclear-agums = i_umskz.
+      ENDIF.
+      ls_ftclear-agkoa = ikoart.  "Account Type - D -Client K - Provider
+      ls_ftclear-xnops = 'X'.     "Indicator: Select only open items which are not special G/L?
+      ls_ftclear-agbuk = bukrs.   "Example company code
+      ls_ftclear-agkon = agkon.   "Filtro pela conta
+      ls_ftclear-selfd = 'BELNR'. "Selection Field
+      ls_ftclear-selvon = doc-belnr.
+      ls_ftclear-selbis = doc-belnr.
+
+      "Considerar o ano do documento
+      WRITE doc-gjahr(4) TO ls_ftclear-selvon+10.
+      WRITE doc-gjahr(4) TO ls_ftclear-selbis+10.
+
+
+      APPEND ls_ftclear TO lt_ftclear.
+    ENDLOOP.
+
+
     CALL FUNCTION 'POSTING_INTERFACE_CLEARING'
       EXPORTING
-        i_auglv                    = 'UMBUCHNG'  " transfer posting with clearing
-        i_tcode                    = 'FB05'
-        i_sgfunct                  = 'C'
-      IMPORTING
-        e_msgid                    = e_msgid
-        e_msgno                    = e_msgno
-        e_msgty                    = e_msgty
-        e_msgv1                    = e_msgv1
-        e_msgv2                    = e_msgv2
-        e_msgv3                    = e_msgv3
-        e_msgv4                    = e_msgv4
-        e_subrc                    = e_subrc
+        i_auglv                    = l_auglv
+        i_tcode                    = l_tcode
+        i_sgfunct                  = l_sgfunct
+        i_no_auth                  = ' '
       TABLES
-        t_blntab                   = t_blntab
-        t_ftclear                  = t_ftclear
-        t_ftpost                   = t_ftpost
-        t_fttax                    = t_fttax
+        t_blntab                   = lt_blntab
+        t_ftclear                  = lt_ftclear
+        t_ftpost                   = lt_ftpost
+        t_fttax                    = lt_fttax
       EXCEPTIONS
         clearing_procedure_invalid = 1
         clearing_procedure_missing = 2
@@ -351,46 +408,39 @@ FUNCTION zfi_ws_f32 .
         no_authorization           = 9
         OTHERS                     = 10.
 
-    IF sy-subrc <> 0.
-      message =  'Erro ao finalizar a interface POSTING_INTERFACE_END'.
+
+    IF sy-msgty EQ 'S'.
+      belnr = sy-msgv1.
+    ENDIF.
+    CALL FUNCTION 'BALW_BAPIRETURN_GET2'
+      EXPORTING
+        type   = sy-msgty
+        cl     = sy-msgid
+        number = sy-msgno
+      IMPORTING
+        return = ireturn.
+
+    MOVE: ireturn-message_v1 TO sy-msgv1,
+*        ireturn-type TO bapireturn-type,
+*        ireturn-id TO bapireturn-id,
+*        ireturn-number TO bapireturn-number,
+          ireturn-message TO message.
+    IF ireturn-type EQ 'S'.
+      CONCATENATE message '-' belnr INTO message.
+*     move belnr to message.
     ENDIF.
 
-    " finalizar a interface
     CALL FUNCTION 'POSTING_INTERFACE_END'
       EXPORTING
         i_bdcimmed              = 'X'
+*       i_bdcstrtdt             = no_date
+*       i_bdcstrttm             = no_time
       EXCEPTIONS
         session_not_processable = 1
         OTHERS                  = 2.
 
     IF sy-subrc <> 0.
-      message = 'Erro ao finalizar a interface POSTING_INTERFACE_END'.
-    ENDIF.
-
-    IF e_subrc = 0.
-      COMMIT WORK.
-    ELSE.
-      DATA lv_message TYPE string.
-
-      CALL FUNCTION 'MESSAGE_TEXT_BUILD'
-        EXPORTING
-          msgid               = e_msgid
-          msgnr               = e_msgno
-          msgv1               = e_msgv1
-          msgv2               = e_msgv2
-          msgv3               = e_msgv3
-          msgv4               = e_msgv4
-        IMPORTING
-          message_text_output = lv_message.
-
-      message = lv_message.
-
+      RETURN.
     ENDIF.
   ENDIF.
-
-  "--------------------------------------------------
-  " COMPENSAÇÃO DE DOCUMENTOS PARA CLIENTES
-  "--------------------------------------------------
-
-
 ENDFUNCTION.
