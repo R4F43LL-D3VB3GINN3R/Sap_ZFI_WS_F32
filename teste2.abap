@@ -103,6 +103,8 @@ FUNCTION zfi_ws_f32 .
           ls_document-dmbtr = ls_temp_bseg-wrbtr.
       ENDCASE.
 
+      ls_document-shkzg = ls_temp_bseg-shkzg.
+      ls_document-koart = ls_temp_bseg-koart.
       ls_document-hkont = ls_temp_bseg-hkont.
       ls_document-bschl = ls_temp_bseg-bschl.
       MODIFY it_document FROM ls_document.
@@ -187,13 +189,13 @@ FUNCTION zfi_ws_f32 .
         e_subrc TYPE sy-subrc.
 
   "--------------------------------------------------
-  " inicia a interface de posting
-
+  " COMPENSAÇÃO DE DOCUMENTOS PARA FORNECEDORES
+  "--------------------------------------------------
   CALL FUNCTION 'POSTING_INTERFACE_START'
     EXPORTING
       i_client           = sy-mandt
       i_function         = 'C'
-      i_mode             = 'N'
+      i_mode             = 'A'
       i_user             = sy-uname
     EXCEPTIONS
       client_incorrect   = 1
@@ -208,38 +210,44 @@ FUNCTION zfi_ws_f32 .
             WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
   ENDIF.
 
-  "--------------------------------------------------
-  " preenchimento para estrutura de fornecedores
+  DATA: it_doc_vendors TYPE ztt_documents,
+        ls_doc_vendors TYPE zst_documents.
 
-  SORT it_document BY belnr buzei ASCENDING.
+  LOOP AT it_document INTO ls_document WHERE koart EQ 'K'.
+    APPEND ls_document TO it_doc_vendors.
+  ENDLOOP.
+
+  SORT it_doc_vendors BY belnr buzei ASCENDING.
   DATA: lv_last_belnr TYPE belnr_d.
   DATA: doc_itemcount TYPE i VALUE 1.
 
-  LOOP AT it_document INTO ls_document.
+  IF it_doc_vendors IS NOT INITIAL.
 
-    IF lv_last_belnr EQ ls_document-belnr.
-      CONTINUE.
-    ENDIF.
+    LOOP AT it_doc_vendors INTO ls_doc_vendors WHERE koart EQ 'K'.
 
-    CLEAR ls_ftpost.
-    ls_ftclear-agkoa  = 'K'.
-    ls_ftclear-xnops  = 'X'.
-    ls_ftclear-agkon  = ls_wsdl-agkon.
-    ls_ftclear-agbuk  = ls_wsdl-bukrs.
-    ls_ftclear-selfd  = 'BELNR'.
-    ls_ftclear-selvon = ls_document-belnr.
-    ls_ftclear-selbis = ls_document-belnr.
-    APPEND ls_ftclear TO t_ftclear.
+      IF lv_last_belnr EQ ls_document-belnr.
+        CONTINUE.
+      ENDIF.
 
-    "--------------------------------------------------
-    " documento (compensação)
+      CLEAR ls_ftpost.
+      ls_ftclear-agkoa  = 'K'.
+      ls_ftclear-xnops  = 'X'.
+      ls_ftclear-agkon  = ls_wsdl-agkon.
+      ls_ftclear-agbuk  = ls_wsdl-bukrs.
+      ls_ftclear-selfd  = 'BELNR'.
+      ls_ftclear-selvon = ls_doc_vendors-belnr.
+      ls_ftclear-selbis = ls_doc_vendors-belnr.
+      APPEND ls_ftclear TO t_ftclear.
 
-    CLEAR: ls_ftpost.
-    ls_ftpost-stype = 'K'."Header
-    ls_ftpost-count = doc_itemcount.  "number of Dynpro
-    ADD 1 TO doc_itemcount.
+      "--------------------------------------------------
+      " documento (compensação)
 
-    IF doc_itemcount LT lines( it_document ) - 1.
+      CLEAR: ls_ftpost.
+      ls_ftpost-stype = 'K'."Header
+      ls_ftpost-count = doc_itemcount.  "number of Dynpro
+      ADD 1 TO doc_itemcount.
+
+*      IF doc_itemcount LT lines( it_doc_vendors ) - 1.
 
       ls_ftpost-fnam = 'BKPF-BUDAT'.
       CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
@@ -262,17 +270,17 @@ FUNCTION zfi_ws_f32 .
       APPEND ls_ftpost TO t_ftpost.
 
       ls_ftpost-fnam = 'BKPF-WAERS'.
-      ls_ftpost-fval = ls_document-waers.
+      ls_ftpost-fval = ls_doc_vendors-waers.
       APPEND ls_ftpost TO t_ftpost.
 
-*      ls_ftpost-fnam  = 'BDC_OKCODE'.
-*      ls_ftpost-fval  = '/00'.
-*      APPEND ls_ftpost TO t_ftpost.
+      ls_ftpost-fnam  = 'BDC_OKCODE'.
+      ls_ftpost-fval  = '/00'.
+      APPEND ls_ftpost TO t_ftpost.
 
-    ENDIF.
+*      ENDIF.
 
-    "--------------------------------------------------
-    LOOP AT it_document INTO DATA(ls_document2) WHERE belnr EQ ls_document-belnr.
+      "--------------------------------------------------
+*      LOOP AT it_doc_vendors INTO DATA(ls_doc_vendors2) WHERE belnr EQ ls_doc_vendors-belnr.
 
       CLEAR ls_ftpost.
       ls_ftpost-stype = 'P'.
@@ -287,7 +295,7 @@ FUNCTION zfi_ws_f32 .
       APPEND ls_ftpost TO t_ftpost.
 
       DATA lv_wrbtr_char TYPE string.
-      lv_wrbtr_char = ls_document-dmbtr.
+      lv_wrbtr_char = ls_doc_vendors-dmbtr.
       TRANSLATE lv_wrbtr_char USING '.,'.
       CONDENSE lv_wrbtr_char NO-GAPS.
 
@@ -297,89 +305,105 @@ FUNCTION zfi_ws_f32 .
       APPEND ls_ftpost TO t_ftpost.
 
       ls_ftpost-count = doc_itemcount.
+      ls_ftpost-fnam  = 'BSEG-SHKZG'.
+      ls_ftpost-fval  = ls_document-shkzg.
+      APPEND ls_ftpost TO t_ftpost.
+
+      ls_ftpost-count = doc_itemcount.
+      ls_ftpost-fnam  = 'BSEG-HKONT'.
+      ls_ftpost-fval  = ls_document-hkont.
+      APPEND ls_ftpost TO t_ftpost.
+
+      ls_ftpost-count = doc_itemcount.
       ls_ftpost-fnam  = 'BSEG-ZFBDT'.    " Amount
       CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
       APPEND ls_ftpost TO t_ftpost.
 
-*      ls_ftpost-count = doc_itemcount.
-*      ls_ftpost-fnam  = 'BDC_OKCODE'.
-*      ls_ftpost-fval  = '/00'.
-*      APPEND ls_ftpost TO t_ftpost.
+      ls_ftpost-count = doc_itemcount.
+      ls_ftpost-fnam  = 'BDC_OKCODE'.
+      ls_ftpost-fval  = '/00'.
+      APPEND ls_ftpost TO t_ftpost.
+
+*      ENDLOOP.
+
+      ADD 1 TO doc_itemcount.
+      lv_last_belnr = ls_document-belnr.
 
     ENDLOOP.
 
-    ADD 1 TO doc_itemcount.
-    lv_last_belnr = ls_document-belnr.
+    "--------------------------------------------------
+    " chamar interface de clearing
+    CALL FUNCTION 'POSTING_INTERFACE_CLEARING'
+      EXPORTING
+        i_auglv                    = 'UMBUCHNG'  " transfer posting with clearing
+        i_tcode                    = 'FB05'
+        i_sgfunct                  = 'C'
+      IMPORTING
+        e_msgid                    = e_msgid
+        e_msgno                    = e_msgno
+        e_msgty                    = e_msgty
+        e_msgv1                    = e_msgv1
+        e_msgv2                    = e_msgv2
+        e_msgv3                    = e_msgv3
+        e_msgv4                    = e_msgv4
+        e_subrc                    = e_subrc
+      TABLES
+        t_blntab                   = t_blntab
+        t_ftclear                  = t_ftclear
+        t_ftpost                   = t_ftpost
+        t_fttax                    = t_fttax
+      EXCEPTIONS
+        clearing_procedure_invalid = 1
+        clearing_procedure_missing = 2
+        table_t041a_empty          = 3
+        transaction_code_invalid   = 4
+        amount_format_error        = 5
+        too_many_line_items        = 6
+        company_code_invalid       = 7
+        screen_not_found           = 8
+        no_authorization           = 9
+        OTHERS                     = 10.
 
-  ENDLOOP.
+    IF sy-subrc <> 0.
+      message =  'Erro ao finalizar a interface POSTING_INTERFACE_END'.
+    ENDIF.
+
+    " finalizar a interface
+    CALL FUNCTION 'POSTING_INTERFACE_END'
+      EXPORTING
+        i_bdcimmed              = 'X'
+      EXCEPTIONS
+        session_not_processable = 1
+        OTHERS                  = 2.
+
+    IF sy-subrc <> 0.
+      message = 'Erro ao finalizar a interface POSTING_INTERFACE_END'.
+    ENDIF.
+
+    IF e_subrc = 0.
+      COMMIT WORK.
+    ELSE.
+      DATA lv_message TYPE string.
+
+      CALL FUNCTION 'MESSAGE_TEXT_BUILD'
+        EXPORTING
+          msgid               = e_msgid
+          msgnr               = e_msgno
+          msgv1               = e_msgv1
+          msgv2               = e_msgv2
+          msgv3               = e_msgv3
+          msgv4               = e_msgv4
+        IMPORTING
+          message_text_output = lv_message.
+
+      message = lv_message.
+
+    ENDIF.
+  ENDIF.
 
   "--------------------------------------------------
-  " chamar interface de clearing
-  CALL FUNCTION 'POSTING_INTERFACE_CLEARING'
-    EXPORTING
-      i_auglv                    = 'UMBUCHNG'  " transfer posting with clearing
-      i_tcode                    = 'FB05'
-      i_sgfunct                  = 'C'
-    IMPORTING
-      e_msgid                    = e_msgid
-      e_msgno                    = e_msgno
-      e_msgty                    = e_msgty
-      e_msgv1                    = e_msgv1
-      e_msgv2                    = e_msgv2
-      e_msgv3                    = e_msgv3
-      e_msgv4                    = e_msgv4
-      e_subrc                    = e_subrc
-    TABLES
-      t_blntab                   = t_blntab
-      t_ftclear                  = t_ftclear
-      t_ftpost                   = t_ftpost
-      t_fttax                    = t_fttax
-    EXCEPTIONS
-      clearing_procedure_invalid = 1
-      clearing_procedure_missing = 2
-      table_t041a_empty          = 3
-      transaction_code_invalid   = 4
-      amount_format_error        = 5
-      too_many_line_items        = 6
-      company_code_invalid       = 7
-      screen_not_found           = 8
-      no_authorization           = 9
-      OTHERS                     = 10.
+  " COMPENSAÇÃO DE DOCUMENTOS PARA CLIENTES
+  "--------------------------------------------------
 
-  IF sy-subrc <> 0.
-    message =  'Erro ao finalizar a interface POSTING_INTERFACE_END'.
-  ENDIF.
-
-  " finalizar a interface
-  CALL FUNCTION 'POSTING_INTERFACE_END'
-    EXPORTING
-      i_bdcimmed              = 'X'
-    EXCEPTIONS
-      session_not_processable = 1
-      OTHERS                  = 2.
-
-  IF sy-subrc <> 0.
-    message = 'Erro ao finalizar a interface POSTING_INTERFACE_END'.
-  ENDIF.
-
-  IF e_subrc = 0.
-    COMMIT WORK.
-  ELSE.
-    DATA lv_message TYPE string.
-
-    CALL FUNCTION 'MESSAGE_TEXT_BUILD'
-      EXPORTING
-        msgid               = e_msgid
-        msgnr               = e_msgno
-        msgv1               = e_msgv1
-        msgv2               = e_msgv2
-        msgv3               = e_msgv3
-        msgv4               = e_msgv4
-      IMPORTING
-        message_text_output = lv_message.
-
-    message = lv_message.
-
-  ENDIF.
 
 ENDFUNCTION.
