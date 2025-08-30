@@ -224,11 +224,8 @@ FUNCTION zfi_ws_f32 .
   IF it_doc_vendors IS NOT INITIAL.
 
     LOOP AT it_doc_vendors INTO ls_doc_vendors WHERE koart EQ 'K'.
-
-*      IF lv_last_belnr EQ ls_doc_vendors-belnr.
-*        CONTINUE.
-*      ENDIF.
-
+      
+      "informacoes enviadas para a tela exclusiva de batch-input
       CLEAR ls_ftpost.
       ls_ftclear-agkoa  = 'K'.
       ls_ftclear-xnops  = 'X'.
@@ -238,22 +235,16 @@ FUNCTION zfi_ws_f32 .
       ls_ftclear-selvon = ls_doc_vendors-belnr && ls_doc_vendors-gjahr && ls_doc_vendors-buzei.
       ls_ftclear-selbis = ls_doc_vendors-belnr && ls_doc_vendors-gjahr && ls_doc_vendors-buzei.
       APPEND ls_ftclear TO t_ftclear.
-
-      "--------------------------------------------------
-      " documento (compensação)
-
-*      IF doc_itemcount EQ lines( it_doc_vendors ) OR lines( it_doc_vendors ) EQ 1.
-
-        CLEAR: ls_ftpost.
-        ls_ftpost-stype = 'K'."Header
-        ls_ftpost-count = doc_itemcount.
-
-*      ENDIF.
-
-*      IF lines( it_doc_vendors ) EQ 4 OR lines( it_doc_vendors ) EQ 1.
-
-      IF doc_itemcount EQ 1.
-
+      
+      "referência de um cabeçalho para cada item
+      "K -> Header N :: P -> Item N+1
+      "
+      CLEAR: ls_ftpost.
+      ls_ftpost-stype = 'K'."Header
+      ls_ftpost-count = doc_itemcount.
+      
+      "informações para a primeira tela da FB05 (cabeçalho)
+      IF doc_itemcount EQ 1. 
         ls_ftpost-fnam = 'BKPF-BUDAT'.
         CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
         APPEND ls_ftpost TO t_ftpost.
@@ -277,62 +268,57 @@ FUNCTION zfi_ws_f32 .
         ls_ftpost-fnam = 'BKPF-WAERS'.
         ls_ftpost-fval = ls_doc_vendors-waers.
         APPEND ls_ftpost TO t_ftpost.
-
       ENDIF.
-
+      
+      "incrementa para o próximo item do documento
       ADD 1 TO doc_itemcount.
-
+      
+      "chave de lançamento (débito e crédito)
       DATA: lv_key TYPE bschl.
       IF ls_document-shkzg EQ 'S'.
         lv_key = '40'.
       ELSE.
         lv_key = '50'.
       ENDIF.
-
       CLEAR ls_ftpost.
       ls_ftpost-stype = 'P'.
       ls_ftpost-count = doc_itemcount.
-*      ls_ftpost-count = '010'.
       ls_ftpost-fnam  = 'RF05A-NEWBS'.
       ls_ftpost-fval  = lv_key.
       APPEND ls_ftpost TO t_ftpost.
-
+      
+      "conta do razão com chave de lançamento previamente estabelecida
       ls_ftpost-count = doc_itemcount.
-*      ls_ftpost-count = '010'.
       ls_ftpost-fnam  = 'RF05A-NEWKO'.   " Vendor code
       ls_ftpost-fval  = '2782000005'.
       APPEND ls_ftpost TO t_ftpost.
-
+      
+      "formatacao do campo para valor do item
       DATA lv_wrbtr_char TYPE string.
       lv_wrbtr_char = ls_doc_vendors-dmbtr.
       TRANSLATE lv_wrbtr_char USING '.,'.
       CONDENSE lv_wrbtr_char NO-GAPS.
-
       ls_ftpost-count = doc_itemcount.
-*      ls_ftpost-count = '010'.
       ls_ftpost-fnam  = 'BSEG-WRBTR'.
       ls_ftpost-fval  = lv_wrbtr_char.
       APPEND ls_ftpost TO t_ftpost.
-
+      
+      "data de lançamento do item
       ls_ftpost-count = doc_itemcount.
-*      ls_ftpost-count = '010'.
-      ls_ftpost-fnam  = 'BSEG-VALUT'.    " Amount
+      ls_ftpost-fnam  = 'BSEG-VALUT'.    
       CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
       APPEND ls_ftpost TO t_ftpost.
-
+      
+      "tecla enter 
       ls_ftpost-count = doc_itemcount.
-*      ls_ftpost-count = '010'.
       ls_ftpost-fnam  = 'BDC_OKCODE'.
       ls_ftpost-fval  = '/00'.
       APPEND ls_ftpost TO t_ftpost.
-
+      
+      "incrementa para o próximo valor
       ADD 1 TO doc_itemcount.
-*      lv_last_belnr = ls_doc_vendors-belnr.
-
     ENDLOOP.
 
-    "--------------------------------------------------
-    " chamar interface de clearing
     CALL FUNCTION 'POSTING_INTERFACE_CLEARING'
       EXPORTING
         i_auglv                    = 'UMBUCHNG'  " transfer posting with clearing
@@ -364,11 +350,20 @@ FUNCTION zfi_ws_f32 .
         no_authorization           = 9
         OTHERS                     = 10.
 
-    IF sy-subrc <> 0.
-      message =  'Erro ao finalizar a interface POSTING_INTERFACE_END'.
-    ENDIF.
+    DATA lv_message TYPE string.
+    CALL FUNCTION 'MESSAGE_TEXT_BUILD'
+      EXPORTING
+        msgid               = e_msgid
+        msgnr               = e_msgno
+        msgv1               = e_msgv1
+        msgv2               = e_msgv2
+        msgv3               = e_msgv3
+        msgv4               = e_msgv4
+      IMPORTING
+        message_text_output = lv_message.
 
-    " finalizar a interface
+    message = lv_message.
+
     CALL FUNCTION 'POSTING_INTERFACE_END'
       EXPORTING
         i_bdcimmed              = 'X'
@@ -376,28 +371,8 @@ FUNCTION zfi_ws_f32 .
         session_not_processable = 1
         OTHERS                  = 2.
 
-    IF sy-subrc <> 0.
-      message = 'Erro ao finalizar a interface POSTING_INTERFACE_END'.
-    ENDIF.
-
     IF e_subrc = 0.
       COMMIT WORK.
-    ELSE.
-      DATA lv_message TYPE string.
-
-      CALL FUNCTION 'MESSAGE_TEXT_BUILD'
-        EXPORTING
-          msgid               = e_msgid
-          msgnr               = e_msgno
-          msgv1               = e_msgv1
-          msgv2               = e_msgv2
-          msgv3               = e_msgv3
-          msgv4               = e_msgv4
-        IMPORTING
-          message_text_output = lv_message.
-
-      message = lv_message.
-
     ENDIF.
   ENDIF.
 
