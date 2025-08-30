@@ -225,9 +225,9 @@ FUNCTION zfi_ws_f32 .
 
     LOOP AT it_doc_vendors INTO ls_doc_vendors WHERE koart EQ 'K'.
 
-      IF lv_last_belnr EQ ls_doc_vendors-belnr.
-        CONTINUE.
-      ENDIF.
+*      IF lv_last_belnr EQ ls_doc_vendors-belnr.
+*        CONTINUE.
+*      ENDIF.
 
       CLEAR ls_ftpost.
       ls_ftclear-agkoa  = 'K'.
@@ -252,7 +252,7 @@ FUNCTION zfi_ws_f32 .
 
 *      IF lines( it_doc_vendors ) EQ 4 OR lines( it_doc_vendors ) EQ 1.
 
-*      IF doc_itemcount EQ 1.
+      IF doc_itemcount EQ 1.
 
         ls_ftpost-fnam = 'BKPF-BUDAT'.
         CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
@@ -278,7 +278,7 @@ FUNCTION zfi_ws_f32 .
         ls_ftpost-fval = ls_doc_vendors-waers.
         APPEND ls_ftpost TO t_ftpost.
 
-*      ENDIF.
+      ENDIF.
 
       ADD 1 TO doc_itemcount.
 
@@ -291,14 +291,14 @@ FUNCTION zfi_ws_f32 .
 
       CLEAR ls_ftpost.
       ls_ftpost-stype = 'P'.
-*      ls_ftpost-count = doc_itemcount.
-      ls_ftpost-count = '010'.
+      ls_ftpost-count = doc_itemcount.
+*      ls_ftpost-count = '010'.
       ls_ftpost-fnam  = 'RF05A-NEWBS'.
       ls_ftpost-fval  = lv_key.
       APPEND ls_ftpost TO t_ftpost.
 
-*      ls_ftpost-count = doc_itemcount.
-      ls_ftpost-count = '010'.
+      ls_ftpost-count = doc_itemcount.
+*      ls_ftpost-count = '010'.
       ls_ftpost-fnam  = 'RF05A-NEWKO'.   " Vendor code
       ls_ftpost-fval  = '2782000005'.
       APPEND ls_ftpost TO t_ftpost.
@@ -308,26 +308,26 @@ FUNCTION zfi_ws_f32 .
       TRANSLATE lv_wrbtr_char USING '.,'.
       CONDENSE lv_wrbtr_char NO-GAPS.
 
-*      ls_ftpost-count = doc_itemcount.
-      ls_ftpost-count = '010'.
+      ls_ftpost-count = doc_itemcount.
+*      ls_ftpost-count = '010'.
       ls_ftpost-fnam  = 'BSEG-WRBTR'.
       ls_ftpost-fval  = lv_wrbtr_char.
       APPEND ls_ftpost TO t_ftpost.
 
-*      ls_ftpost-count = doc_itemcount.
-      ls_ftpost-count = '010'.
+      ls_ftpost-count = doc_itemcount.
+*      ls_ftpost-count = '010'.
       ls_ftpost-fnam  = 'BSEG-VALUT'.    " Amount
       CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
       APPEND ls_ftpost TO t_ftpost.
 
-*      ls_ftpost-count = doc_itemcount.
-      ls_ftpost-count = '010'.
+      ls_ftpost-count = doc_itemcount.
+*      ls_ftpost-count = '010'.
       ls_ftpost-fnam  = 'BDC_OKCODE'.
       ls_ftpost-fval  = '/00'.
       APPEND ls_ftpost TO t_ftpost.
 
       ADD 1 TO doc_itemcount.
-      lv_last_belnr = ls_doc_vendors-belnr.
+*      lv_last_belnr = ls_doc_vendors-belnr.
 
     ENDLOOP.
 
