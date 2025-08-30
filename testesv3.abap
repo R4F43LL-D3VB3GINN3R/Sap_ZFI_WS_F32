@@ -224,7 +224,7 @@ FUNCTION zfi_ws_f32 .
   IF it_doc_vendors IS NOT INITIAL.
 
     LOOP AT it_doc_vendors INTO ls_doc_vendors WHERE koart EQ 'K'.
-      
+
       "informacoes enviadas para a tela exclusiva de batch-input
       CLEAR ls_ftpost.
       ls_ftclear-agkoa  = 'K'.
@@ -235,16 +235,16 @@ FUNCTION zfi_ws_f32 .
       ls_ftclear-selvon = ls_doc_vendors-belnr && ls_doc_vendors-gjahr && ls_doc_vendors-buzei.
       ls_ftclear-selbis = ls_doc_vendors-belnr && ls_doc_vendors-gjahr && ls_doc_vendors-buzei.
       APPEND ls_ftclear TO t_ftclear.
-      
+
       "referência de um cabeçalho para cada item
-      "K -> Header N :: P -> Item N+1
-      "
+      "K -> Header N recebe P -> Item N+1
+      "é como funciona a associação para esta função
       CLEAR: ls_ftpost.
       ls_ftpost-stype = 'K'."Header
       ls_ftpost-count = doc_itemcount.
-      
+
       "informações para a primeira tela da FB05 (cabeçalho)
-      IF doc_itemcount EQ 1. 
+      IF doc_itemcount EQ 1.
         ls_ftpost-fnam = 'BKPF-BUDAT'.
         CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
         APPEND ls_ftpost TO t_ftpost.
@@ -269,13 +269,12 @@ FUNCTION zfi_ws_f32 .
         ls_ftpost-fval = ls_doc_vendors-waers.
         APPEND ls_ftpost TO t_ftpost.
       ENDIF.
-      
-      "incrementa para o próximo item do documento
+
       ADD 1 TO doc_itemcount.
-      
+
       "chave de lançamento (débito e crédito)
       DATA: lv_key TYPE bschl.
-      IF ls_document-shkzg EQ 'S'.
+      IF ls_doc_vendors-shkzg EQ 'S'.
         lv_key = '40'.
       ELSE.
         lv_key = '50'.
@@ -286,13 +285,13 @@ FUNCTION zfi_ws_f32 .
       ls_ftpost-fnam  = 'RF05A-NEWBS'.
       ls_ftpost-fval  = lv_key.
       APPEND ls_ftpost TO t_ftpost.
-      
+
       "conta do razão com chave de lançamento previamente estabelecida
       ls_ftpost-count = doc_itemcount.
       ls_ftpost-fnam  = 'RF05A-NEWKO'.   " Vendor code
       ls_ftpost-fval  = '2782000005'.
       APPEND ls_ftpost TO t_ftpost.
-      
+
       "formatacao do campo para valor do item
       DATA lv_wrbtr_char TYPE string.
       lv_wrbtr_char = ls_doc_vendors-dmbtr.
@@ -302,19 +301,19 @@ FUNCTION zfi_ws_f32 .
       ls_ftpost-fnam  = 'BSEG-WRBTR'.
       ls_ftpost-fval  = lv_wrbtr_char.
       APPEND ls_ftpost TO t_ftpost.
-      
+
       "data de lançamento do item
       ls_ftpost-count = doc_itemcount.
-      ls_ftpost-fnam  = 'BSEG-VALUT'.    
+      ls_ftpost-fnam  = 'BSEG-VALUT'.
       CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
       APPEND ls_ftpost TO t_ftpost.
-      
-      "tecla enter 
+
+      "tecla enter
       ls_ftpost-count = doc_itemcount.
       ls_ftpost-fnam  = 'BDC_OKCODE'.
       ls_ftpost-fval  = '/00'.
       APPEND ls_ftpost TO t_ftpost.
-      
+
       "incrementa para o próximo valor
       ADD 1 TO doc_itemcount.
     ENDLOOP.
