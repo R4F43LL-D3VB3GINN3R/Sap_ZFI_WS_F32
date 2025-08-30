@@ -241,13 +241,18 @@ FUNCTION zfi_ws_f32 .
 
       "--------------------------------------------------
       " documento (compensação)
-      CLEAR: ls_ftpost.
-      ls_ftpost-stype = 'K'."Header
-      ls_ftpost-count = doc_itemcount.
 
-*      IF lines( it_doc_vendors ) eq 4 OR lines( it_doc_vendors ) EQ 1.
+*      IF doc_itemcount EQ lines( it_doc_vendors ) OR lines( it_doc_vendors ) EQ 1.
 
-        if doc_itemcount eq 1.
+        CLEAR: ls_ftpost.
+        ls_ftpost-stype = 'K'."Header
+        ls_ftpost-count = doc_itemcount.
+
+*      ENDIF.
+
+*      IF lines( it_doc_vendors ) EQ 4 OR lines( it_doc_vendors ) EQ 1.
+
+*      IF doc_itemcount EQ 1.
 
         ls_ftpost-fnam = 'BKPF-BUDAT'.
         CONCATENATE sy-datum+6(2) sy-datum+4(2) sy-datum(4) INTO ls_ftpost-fval SEPARATED BY '.'.
@@ -273,7 +278,7 @@ FUNCTION zfi_ws_f32 .
         ls_ftpost-fval = ls_doc_vendors-waers.
         APPEND ls_ftpost TO t_ftpost.
 
-      ENDIF.
+*      ENDIF.
 
       ADD 1 TO doc_itemcount.
 
@@ -323,6 +328,7 @@ FUNCTION zfi_ws_f32 .
 
       ADD 1 TO doc_itemcount.
       lv_last_belnr = ls_doc_vendors-belnr.
+
     ENDLOOP.
 
     "--------------------------------------------------
